@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Life Tracker</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <!-- Lock screen -->
+  <div id="lock" class="lock hidden">
+    <div class="lock-card">
+      <h1>Life Tracker</h1>
+      <p id="lock-msg" class="muted">Enter your passcode</p>
+      <input id="lock-input" type="password" autocomplete="off" placeholder="Passcode" />
+      <input id="lock-input-confirm" type="password" autocomplete="off" placeholder="Confirm passcode" class="hidden" />
+      <button id="lock-submit">Unlock</button>
+      <p id="lock-error" class="error hidden"></p>
+      <p class="muted small">Data is stored only in this browser. Choose a passcode you'll remember.</p>
+    </div>
+  </div>
+
+  <!-- App shell -->
+  <div id="app" class="app hidden">
+    <aside class="sidebar">
+      <div class="brand">
+        <span class="brand-dot"></span>
+        <span>Life Tracker</span>
+      </div>
+      <nav class="nav">
+        <button class="nav-item active" data-view="dashboard">Dashboard</button>
+        <button class="nav-item" data-view="areas">Areas</button>
+        <button class="nav-item" data-view="todos">To-Dos</button>
+        <button class="nav-item" data-view="updates">Update Log</button>
+      </nav>
+      <div class="sidebar-footer">
+        <button id="export-pdf" class="ghost" title="Export current view as PDF">PDF</button>
+        <button id="export-ppt" class="ghost" title="Export current view as PPT">PPT</button>
+        <button id="export-xlsx" class="ghost" title="Export all data as Excel">XLSX</button>
+        <button id="lock-now" class="ghost danger" title="Lock">Lock</button>
+      </div>
+    </aside>
+
+    <main id="main" class="main">
+      <!-- View renders here -->
+    </main>
+  </div>
+
+  <!-- Modal -->
+  <div id="modal" class="modal hidden">
+    <div class="modal-card">
+      <header><h3 id="modal-title">Title</h3><button class="icon-btn" id="modal-close">&times;</button></header>
+      <div id="modal-body"></div>
+    </div>
+  </div>
+
+  <!-- CDN libs (lazy-used; only needed for exports) -->
+  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bundle.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
