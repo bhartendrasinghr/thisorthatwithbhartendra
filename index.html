@@ -1,22 +1,28 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Life Tracker</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
   <!-- Lock screen -->
   <div id="lock" class="lock hidden">
     <div class="lock-card">
-      <h1>Life Tracker</h1>
+      <div class="lock-brand">
+        <span class="brand-dot"></span>
+        <h1>Life Tracker</h1>
+      </div>
       <p id="lock-msg" class="muted">Enter your passcode</p>
       <input id="lock-input" type="password" autocomplete="off" placeholder="Passcode" />
       <input id="lock-input-confirm" type="password" autocomplete="off" placeholder="Confirm passcode" class="hidden" />
       <button id="lock-submit">Unlock</button>
       <p id="lock-error" class="error hidden"></p>
-      <p class="muted small">Data is stored only in this browser. Choose a passcode you'll remember.</p>
+      <p class="muted small">Data stays in this browser. Choose a passcode you'll remember.</p>
     </div>
   </div>
 
@@ -28,15 +34,28 @@
         <span>Life Tracker</span>
       </div>
       <nav class="nav">
-        <button class="nav-item active" data-view="dashboard">Dashboard</button>
-        <button class="nav-item" data-view="areas">Areas</button>
-        <button class="nav-item" data-view="todos">To-Dos</button>
-        <button class="nav-item" data-view="updates">Update Log</button>
+        <button class="nav-item active" data-view="dashboard"><span class="nav-icon" data-icon="dashboard"></span><span>Dashboard</span></button>
+        <button class="nav-item" data-view="areas"><span class="nav-icon" data-icon="grid"></span><span>Areas</span></button>
+        <button class="nav-item" data-view="todos"><span class="nav-icon" data-icon="check"></span><span>To-Dos</span></button>
+        <button class="nav-item" data-view="updates"><span class="nav-icon" data-icon="log"></span><span>Update Log</span></button>
       </nav>
+      <div class="sidebar-section">
+        <div class="sidebar-label">Export</div>
+        <div class="sidebar-grid">
+          <button id="export-pdf" class="ghost sm" title="Export current view as PDF">PDF</button>
+          <button id="export-ppt" class="ghost sm" title="Export current view as PPT">PPT</button>
+          <button id="export-xlsx" class="ghost sm" title="Export all data as Excel">XLSX</button>
+          <button id="export-json" class="ghost sm" title="Backup all data as JSON">JSON</button>
+        </div>
+      </div>
+      <div class="sidebar-section">
+        <div class="sidebar-label">Data</div>
+        <div class="sidebar-grid">
+          <button id="import-json" class="ghost sm" title="Restore from JSON backup">Restore</button>
+          <button id="theme-toggle" class="ghost sm" title="Toggle theme">Theme</button>
+        </div>
+      </div>
       <div class="sidebar-footer">
-        <button id="export-pdf" class="ghost" title="Export current view as PDF">PDF</button>
-        <button id="export-ppt" class="ghost" title="Export current view as PPT">PPT</button>
-        <button id="export-xlsx" class="ghost" title="Export all data as Excel">XLSX</button>
         <button id="lock-now" class="ghost danger" title="Lock">Lock</button>
       </div>
     </aside>
@@ -49,10 +68,16 @@
   <!-- Modal -->
   <div id="modal" class="modal hidden">
     <div class="modal-card">
-      <header><h3 id="modal-title">Title</h3><button class="icon-btn" id="modal-close">&times;</button></header>
+      <header><h3 id="modal-title">Title</h3><button class="icon-btn" id="modal-close" aria-label="Close">&times;</button></header>
       <div id="modal-body"></div>
     </div>
   </div>
+
+  <!-- Toast -->
+  <div id="toast" class="toast hidden"></div>
+
+  <!-- Hidden file input for JSON import -->
+  <input id="import-file" type="file" accept="application/json,.json" class="hidden" />
 
   <!-- CDN libs (lazy-used; only needed for exports) -->
   <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>

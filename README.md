@@ -18,16 +18,20 @@ You'll be asked to set a passcode. The SHA-256 hash is stored in `localStorage` 
 ## Features
 
 - Add Areas, Projects (under an area), and Tasks (under a project)
+- Tasks support **due dates** and **priority** (Low / Medium / High); list is auto-sorted by urgency
 - Mark tasks done / reopen
 - Add free-form **updates** to any area, project, or task — each item shows its own update log
-- Dashboard with progress across all areas; click into any area / project / task for a focused view
+- Dashboard with progress across all areas, **Overdue** and **Due-in-7-days** counters, and a "Due now / soon" list
 - Quick-capture **To-Dos** section, separate from project tasks
 - Global **Update Log** view
+- **Light / dark theme** toggle
 - **Export current view as PDF** (visual snapshot)
 - **Export current view as PPT** (.pptx with tables and summaries per slide)
 - **Export all data as Excel** (.xlsx with Areas / Projects / Tasks / Updates / ToDos sheets)
+- **Backup / Restore as JSON** — full export, plus import with **Replace** or **Merge** options
 - Passcode lock screen + Lock button in sidebar
+- Responsive layout (works on phone)
 
 ## Privacy
 
-All data lives in your browser's `localStorage`. Nothing is sent anywhere. Clearing browser storage will delete the data, so use the XLSX export occasionally as a backup.
+All data lives in your browser's `localStorage`. Nothing is sent anywhere. Clearing browser storage will delete the data, so use the **JSON backup** (full fidelity) or **XLSX export** occasionally as a backup.
