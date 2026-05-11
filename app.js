@@ -5,6 +5,7 @@
 
 const LS_KEY = 'life-tracker:v1';
 const LS_PASS = 'life-tracker:passhash:v1';
+const LS_THEME = 'life-tracker:theme';
 
 const state = {
   data: null,
@@ -19,9 +20,13 @@ function load() {
   try {
     const raw = localStorage.getItem(LS_KEY);
     state.data = raw ? JSON.parse(raw) : emptyData();
-    // Forward-compat: ensure all keys exist
     for (const k of ['areas','projects','tasks','updates','todos']) {
       if (!Array.isArray(state.data[k])) state.data[k] = [];
+    }
+    // Migration: ensure tasks have priority + dueDate
+    for (const t of state.data.tasks) {
+      if (!('priority' in t)) t.priority = 'med';
+      if (!('dueDate' in t)) t.dueDate = null;
     }
   } catch (e) {
     state.data = emptyData();
@@ -44,6 +49,35 @@ const fmtDate = (iso) => {
   return new Date(iso).toLocaleDateString(undefined, { dateStyle: 'medium' });
 };
 
+// Date helpers for due dates (stored as YYYY-MM-DD)
+function todayYMD() {
+  const d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+}
+function daysUntil(ymd) {
+  if (!ymd) return null;
+  const t = new Date(todayYMD() + 'T00:00:00');
+  const d = new Date(ymd + 'T00:00:00');
+  return Math.round((d - t) / 86400000);
+}
+function dueRelative(ymd) {
+  const n = daysUntil(ymd);
+  if (n === null) return '';
+  if (n === 0) return 'Due today';
+  if (n === 1) return 'Due tomorrow';
+  if (n === -1) return 'Overdue 1 day';
+  if (n < -1) return 'Overdue ' + Math.abs(n) + ' days';
+  if (n <= 7) return 'Due in ' + n + ' days';
+  return 'Due ' + new Date(ymd + 'T00:00:00').toLocaleDateString(undefined, { dateStyle: 'medium' });
+}
+function dueClass(t) {
+  if (!t.dueDate || t.status === 'done') return '';
+  const n = daysUntil(t.dueDate);
+  if (n < 0) return 'overdue';
+  if (n <= 2) return 'due-soon';
+  return '';
+}
+
 function el(tag, attrs = {}, ...children) {
   const e = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs)) {
@@ -63,6 +97,43 @@ async function sha256(text) {
   const buf = new TextEncoder().encode(text);
   const hash = await crypto.subtle.digest('SHA-256', buf);
   return [...new Uint8Array(hash)].map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+// ---------- Icons (inline SVG) ----------
+const ICONS = {
+  dashboard: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>',
+  grid: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>',
+  check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>',
+  log: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="15" y2="17"/></svg>',
+};
+function injectIcons() {
+  document.querySelectorAll('[data-icon]').forEach(el => {
+    const name = el.dataset.icon;
+    if (ICONS[name]) el.innerHTML = ICONS[name];
+  });
+}
+
+// ---------- Theme ----------
+function getTheme() {
+  return localStorage.getItem(LS_THEME) || 'dark';
+}
+function setTheme(t) {
+  document.documentElement.setAttribute('data-theme', t);
+  localStorage.setItem(LS_THEME, t);
+}
+function toggleTheme() {
+  setTheme(getTheme() === 'dark' ? 'light' : 'dark');
+  toast('Theme: ' + getTheme());
+}
+
+// ---------- Toast ----------
+let toastTimer;
+function toast(msg, kind) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast' + (kind ? ' ' + kind : '');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.add('hidden'), 2400);
 }
 
 // ---------- CRUD helpers ----------
@@ -90,8 +161,16 @@ function addProject({ areaId, name, description }) {
   logUpdate('project', p.id, 'Created project "' + p.name + '"');
   save(); return p;
 }
-function addTask({ projectId, title, description }) {
-  const t = { id: uid(), projectId, title, description: description || '', status: 'todo', createdAt: now(), completedAt: null };
+function addTask({ projectId, title, description, dueDate, priority }) {
+  const t = {
+    id: uid(), projectId, title,
+    description: description || '',
+    status: 'todo',
+    priority: priority || 'med',
+    dueDate: dueDate || null,
+    createdAt: now(),
+    completedAt: null,
+  };
   state.data.tasks.push(t);
   logUpdate('task', t.id, 'Created task "' + t.title + '"');
   save(); return t;
@@ -143,7 +222,34 @@ function statsForTasks(tasks) {
   const total = tasks.length;
   const done = tasks.filter(t => t.status === 'done').length;
   const pct = total ? Math.round((done / total) * 100) : 0;
-  return { total, done, open: total - done, pct };
+  const open = tasks.filter(t => t.status !== 'done');
+  const overdue = open.filter(t => {
+    const n = daysUntil(t.dueDate);
+    return n !== null && n < 0;
+  }).length;
+  const dueSoon = open.filter(t => {
+    const n = daysUntil(t.dueDate);
+    return n !== null && n >= 0 && n <= 7;
+  }).length;
+  return { total, done, open: total - done, pct, overdue, dueSoon };
+}
+
+// Sort tasks: overdue → due-soon → due-later → no-due, then by priority, then created
+const PRIO_RANK = { high: 0, med: 1, low: 2 };
+function sortTasks(tasks) {
+  return [...tasks].sort((a, b) => {
+    if ((a.status === 'done') !== (b.status === 'done')) return a.status === 'done' ? 1 : -1;
+    const da = daysUntil(a.dueDate);
+    const db = daysUntil(b.dueDate);
+    if (da === null && db === null) {/* fall through */}
+    else if (da === null) return 1;
+    else if (db === null) return -1;
+    else if (da !== db) return da - db;
+    const pa = PRIO_RANK[a.priority || 'med'] ?? 1;
+    const pb = PRIO_RANK[b.priority || 'med'] ?? 1;
+    if (pa !== pb) return pa - pb;
+    return a.createdAt.localeCompare(b.createdAt);
+  });
 }
 
 // ---------- Lock screen ----------
@@ -195,6 +301,7 @@ async function handleLockSubmit() {
 function unlock() {
   lockEl().classList.add('hidden');
   appEl().classList.remove('hidden');
+  injectIcons();
   render();
 }
 function lockNow() {
@@ -219,6 +326,7 @@ function formAddArea() {
   const submit = el('button', { onclick: () => {
     if (!name.value.trim()) return;
     addArea({ name: name.value.trim(), description: desc.value.trim() });
+    toast('Area added', 'ok');
     closeModal(); render();
   } }, 'Add area');
   return el('div', {},
@@ -241,6 +349,7 @@ function formAddProject(areaId) {
   const submit = el('button', { onclick: () => {
     if (!name.value.trim() || !areaSel.value) return;
     addProject({ areaId: areaSel.value, name: name.value.trim(), description: desc.value.trim() });
+    toast('Project added', 'ok');
     closeModal(); render();
   } }, 'Add project');
   return el('div', {},
@@ -262,15 +371,30 @@ function formAddTask(projectId) {
   }
   const title = el('input', { placeholder: 'What needs to be done?' });
   const desc = el('textarea', { placeholder: 'Optional notes' });
+  const due = el('input', { type: 'date' });
+  const prio = el('select', {},
+    el('option', { value: 'low' }, 'Low'),
+    el('option', { value: 'med', selected: true }, 'Medium'),
+    el('option', { value: 'high' }, 'High'));
   const submit = el('button', { onclick: () => {
     if (!title.value.trim() || !projSel.value) return;
-    addTask({ projectId: projSel.value, title: title.value.trim(), description: desc.value.trim() });
+    addTask({
+      projectId: projSel.value,
+      title: title.value.trim(),
+      description: desc.value.trim(),
+      dueDate: due.value || null,
+      priority: prio.value || 'med',
+    });
+    toast('Task added', 'ok');
     closeModal(); render();
   } }, 'Add task');
   return el('div', {},
     el('label', {}, 'Project'), projSel,
     el('label', {}, 'Task title'), title,
     el('label', {}, 'Description'), desc,
+    el('div', { class: 'field-row' },
+      el('div', {}, el('label', {}, 'Due date'), due),
+      el('div', {}, el('label', {}, 'Priority'), prio)),
     el('div', { class: 'modal-actions' },
       el('button', { class: 'ghost', onclick: closeModal }, 'Cancel'),
       submit));
@@ -281,6 +405,7 @@ function formAddUpdate(type, id) {
   const submit = el('button', { onclick: () => {
     if (!text.value.trim()) return;
     logUpdate(type, id, text.value.trim());
+    toast('Update added', 'ok');
     closeModal(); render();
   } }, 'Add update');
   return el('div', {},
@@ -295,6 +420,7 @@ function formAddTodo() {
   const submit = el('button', { onclick: () => {
     if (!title.value.trim()) return;
     addTodo({ title: title.value.trim() });
+    toast('To-do added', 'ok');
     closeModal(); render();
   } }, 'Add to-do');
   return el('div', {},
@@ -308,7 +434,10 @@ function formAddTodo() {
 function setView(view) {
   state.view = view;
   document.querySelectorAll('.nav-item').forEach(b => {
-    b.classList.toggle('active', b.dataset.view === view.name);
+    b.classList.toggle('active', b.dataset.view === view.name
+      || (view.name === 'area' && b.dataset.view === 'areas')
+      || (view.name === 'project' && b.dataset.view === 'areas')
+      || (view.name === 'task' && b.dataset.view === 'areas'));
   });
   render();
 }
@@ -333,25 +462,40 @@ function renderDashboard(root) {
 
   root.appendChild(el('div', { class: 'page-header' },
     el('h2', {}, 'Dashboard'),
-    el('div', {},
-      el('button', { onclick: () => openModal('Quick capture', formAddTodo()) }, '+ To-Do'),
+    el('div', { class: 'actions' },
+      el('button', { class: 'ghost', onclick: () => openModal('Quick capture', formAddTodo()) }, '+ To-Do'),
+      el('button', { onclick: () => openModal('New area', formAddArea()) }, '+ Area'),
     )
   ));
 
-  const stats = el('div', { class: 'stat-grid' },
+  root.appendChild(el('div', { class: 'stat-grid' },
     stat('Areas', state.data.areas.length),
     stat('Projects', state.data.projects.length),
-    stat('Tasks', s.total, s.done + ' done / ' + s.open + ' open'),
+    stat('Tasks', s.total, s.done + ' done · ' + s.open + ' open'),
     stat('Completion', s.pct + '%', s.done + ' of ' + s.total),
+    stat('Overdue', s.overdue, null, s.overdue > 0 ? 'alert' : ''),
+    stat('Due in 7 days', s.dueSoon, null, s.dueSoon > 0 ? 'warn' : ''),
     stat('Open To-Dos', openTodos),
-  );
-  root.appendChild(stats);
+  ));
+
+  // Overdue and due-soon list across all projects
+  const open = allTasks.filter(t => t.status !== 'done' && t.dueDate);
+  const upcoming = sortTasks(open).filter(t => {
+    const n = daysUntil(t.dueDate);
+    return n !== null && n <= 7;
+  }).slice(0, 8);
+  if (upcoming.length > 0) {
+    root.appendChild(el('div', { class: 'section' },
+      el('h3', {}, 'Due now / soon'),
+      el('div', {}, ...upcoming.map(t => taskRow(t, true)))
+    ));
+  }
 
   // Areas overview
   root.appendChild(el('div', { class: 'section' },
     el('h3', {}, 'Areas'),
     state.data.areas.length === 0
-      ? el('div', { class: 'empty' }, 'No areas yet. ',
+      ? emptyBox('No areas yet.',
           el('button', { class: 'sm', onclick: () => openModal('New area', formAddArea()) }, '+ Add area'))
       : el('div', { class: 'grid' },
           ...state.data.areas.map(a => areaCard(a)))
@@ -362,13 +506,21 @@ function renderDashboard(root) {
   root.appendChild(el('div', { class: 'section' },
     el('h3', {}, 'Recent updates'),
     recent.length === 0
-      ? el('div', { class: 'empty' }, 'No updates yet.')
+      ? emptyBox('No updates yet.')
       : el('div', {}, ...recent.map(u => updateRow(u, true)))
   ));
 }
 
-function stat(label, value, sub) {
-  return el('div', { class: 'stat' },
+function emptyBox(msg, ...actions) {
+  return el('div', { class: 'empty' },
+    el('div', { class: 'empty-icon' }, '·'),
+    el('div', {}, msg),
+    actions.length ? el('div', { style: 'margin-top:10px' }, ...actions) : null
+  );
+}
+
+function stat(label, value, sub, kind) {
+  return el('div', { class: 'stat' + (kind ? ' ' + kind : '') },
     el('div', { class: 'label' }, label),
     el('div', { class: 'value' }, String(value)),
     sub ? el('div', { class: 'sub' }, sub) : null
@@ -383,6 +535,7 @@ function areaCard(a) {
     el('h3', {}, a.name),
     el('div', { class: 'meta' }, projects.length + ' projects · ' + s.total + ' tasks · ' + s.pct + '% done'),
     el('div', { class: 'progress' }, el('span', { style: 'width:' + s.pct + '%' })),
+    s.overdue > 0 ? el('div', { class: 'meta', style: 'margin-top:8px; color: var(--danger)' }, s.overdue + ' overdue') : null,
     a.description ? el('div', { class: 'meta', style: 'margin-top:8px' }, a.description) : null
   );
 }
@@ -390,11 +543,12 @@ function areaCard(a) {
 function renderAreas(root) {
   root.appendChild(el('div', { class: 'page-header' },
     el('h2', {}, 'Areas'),
-    el('div', {},
+    el('div', { class: 'actions' },
       el('button', { onclick: () => openModal('New area', formAddArea()) }, '+ Area'))
   ));
   if (state.data.areas.length === 0) {
-    root.appendChild(el('div', { class: 'empty' }, 'No areas yet. Add one to get started.'));
+    root.appendChild(emptyBox('No areas yet. Add one to get started.',
+      el('button', { class: 'sm', onclick: () => openModal('New area', formAddArea()) }, '+ Add area')));
     return;
   }
   root.appendChild(el('div', { class: 'grid' }, ...state.data.areas.map(a => areaCard(a))));
@@ -409,17 +563,15 @@ function renderArea(root, areaId) {
 
   root.appendChild(el('div', { class: 'crumbs' },
     el('a', { onclick: () => setView({ name: 'dashboard' }) }, 'Dashboard'),
-    ' › ',
+    el('span', { class: 'sep' }, '›'),
     el('a', { onclick: () => setView({ name: 'areas' }) }, 'Areas'),
-    ' › ', a.name));
+    el('span', { class: 'sep' }, '›'), a.name));
 
   root.appendChild(el('div', { class: 'page-header' },
     el('h2', {}, a.name),
-    el('div', {},
-      el('button', { onclick: () => openModal('Add update', formAddUpdate('area', a.id)) }, '+ Update'),
-      ' ',
+    el('div', { class: 'actions' },
+      el('button', { class: 'ghost', onclick: () => openModal('Add update', formAddUpdate('area', a.id)) }, '+ Update'),
       el('button', { onclick: () => openModal('New project', formAddProject(a.id)) }, '+ Project'),
-      ' ',
       el('button', { class: 'ghost danger', onclick: () => confirmDelete('area', a.id, a.name) }, 'Delete'))
   ));
 
@@ -430,12 +582,13 @@ function renderArea(root, areaId) {
     stat('Tasks', s.total),
     stat('Done', s.done),
     stat('Completion', s.pct + '%'),
+    stat('Overdue', s.overdue, null, s.overdue > 0 ? 'alert' : ''),
   ));
 
   root.appendChild(el('div', { class: 'section' },
     el('h3', {}, 'Projects'),
     projects.length === 0
-      ? el('div', { class: 'empty' }, 'No projects yet.')
+      ? emptyBox('No projects yet.')
       : el('div', { class: 'grid' }, ...projects.map(p => projectCard(p)))
   ));
 
@@ -452,6 +605,7 @@ function projectCard(p) {
     el('h3', {}, p.name),
     el('div', { class: 'meta' }, s.total + ' tasks · ' + s.pct + '% done'),
     el('div', { class: 'progress' }, el('span', { style: 'width:' + s.pct + '%' })),
+    s.overdue > 0 ? el('div', { class: 'meta', style: 'margin-top:8px; color: var(--danger)' }, s.overdue + ' overdue') : null,
     p.description ? el('div', { class: 'meta', style: 'margin-top:8px' }, p.description) : null
   );
 }
@@ -460,24 +614,22 @@ function renderProject(root, projectId) {
   const p = getProject(projectId);
   if (!p) { setView({ name: 'areas' }); return; }
   const a = getArea(p.areaId);
-  const tasks = tasksOfProject(p.id);
+  const tasks = sortTasks(tasksOfProject(p.id));
   const s = statsForTasks(tasks);
 
   root.appendChild(el('div', { class: 'crumbs' },
     el('a', { onclick: () => setView({ name: 'dashboard' }) }, 'Dashboard'),
-    ' › ',
+    el('span', { class: 'sep' }, '›'),
     el('a', { onclick: () => setView({ name: 'areas' }) }, 'Areas'),
-    ' › ',
+    el('span', { class: 'sep' }, '›'),
     a ? el('a', { onclick: () => setView({ name: 'area', areaId: a.id }) }, a.name) : 'Area',
-    ' › ', p.name));
+    el('span', { class: 'sep' }, '›'), p.name));
 
   root.appendChild(el('div', { class: 'page-header' },
     el('h2', {}, p.name),
-    el('div', {},
-      el('button', { onclick: () => openModal('Add update', formAddUpdate('project', p.id)) }, '+ Update'),
-      ' ',
+    el('div', { class: 'actions' },
+      el('button', { class: 'ghost', onclick: () => openModal('Add update', formAddUpdate('project', p.id)) }, '+ Update'),
       el('button', { onclick: () => openModal('New task', formAddTask(p.id)) }, '+ Task'),
-      ' ',
       el('button', { class: 'ghost danger', onclick: () => confirmDelete('project', p.id, p.name) }, 'Delete'))
   ));
 
@@ -487,13 +639,14 @@ function renderProject(root, projectId) {
     stat('Tasks', s.total),
     stat('Done', s.done),
     stat('Open', s.open),
-    stat('Completion', s.pct + '%')
+    stat('Completion', s.pct + '%'),
+    stat('Overdue', s.overdue, null, s.overdue > 0 ? 'alert' : ''),
   ));
 
   root.appendChild(el('div', { class: 'section' },
     el('h3', {}, 'Tasks'),
     tasks.length === 0
-      ? el('div', { class: 'empty' }, 'No tasks yet.')
+      ? emptyBox('No tasks yet.')
       : el('div', {}, ...tasks.map(t => taskRow(t)))
   ));
 
@@ -503,16 +656,34 @@ function renderProject(root, projectId) {
   ));
 }
 
-function taskRow(t) {
+function taskRow(t, showContext) {
   const cb = el('input', { type: 'checkbox', onchange: () => { toggleTask(t.id); render(); } });
   if (t.status === 'done') cb.checked = true;
-  return el('div', { class: 'task' + (t.status === 'done' ? ' done' : '') },
+  const dueCls = dueClass(t);
+  let p = null;
+  let a = null;
+  if (showContext) {
+    p = getProject(t.projectId);
+    a = p ? getArea(p.areaId) : null;
+  }
+  const titleEls = [
+    document.createTextNode(t.title),
+    t.priority === 'high' ? el('span', { class: 'pill prio-high' }, 'High')
+      : t.priority === 'low' ? el('span', { class: 'pill prio-low' }, 'Low')
+      : null,
+    t.status === 'done'
+      ? el('span', { class: 'pill ok' }, 'done')
+      : (dueCls === 'overdue' ? el('span', { class: 'pill danger' }, dueRelative(t.dueDate))
+        : dueCls === 'due-soon' ? el('span', { class: 'pill warn' }, dueRelative(t.dueDate))
+        : t.dueDate ? el('span', { class: 'pill' }, dueRelative(t.dueDate)) : null),
+  ].filter(Boolean);
+  return el('div', { class: 'task' + (t.status === 'done' ? ' done' : '') + (dueCls ? ' ' + dueCls : '') },
     cb,
     el('div', { class: 'body' },
-      el('div', { class: 'title' }, t.title,
-        t.status === 'done'
-          ? el('span', { class: 'pill ok' }, 'done')
-          : el('span', { class: 'pill warn' }, 'open')),
+      el('div', { class: 'title' }, ...titleEls),
+      showContext && (a || p)
+        ? el('div', { class: 'desc' }, (a ? a.name + ' · ' : '') + (p ? p.name : ''))
+        : null,
       t.description ? el('div', { class: 'desc' }, t.description) : null,
       el('div', { class: 'desc' }, 'Created ' + fmtDate(t.createdAt)
         + (t.completedAt ? ' · Done ' + fmtDate(t.completedAt) : ''))
@@ -530,25 +701,35 @@ function renderTask(root, taskId) {
   if (!t) { setView({ name: 'areas' }); return; }
   const p = getProject(t.projectId);
   const a = p ? getArea(p.areaId) : null;
+  const dueCls = dueClass(t);
 
-  root.appendChild(el('div', { class: 'crumbs' },
+  const crumbs = [
     el('a', { onclick: () => setView({ name: 'dashboard' }) }, 'Dashboard'),
-    ' › ',
+    el('span', { class: 'sep' }, '›'),
     el('a', { onclick: () => setView({ name: 'areas' }) }, 'Areas'),
-    a ? [' › ', el('a', { onclick: () => setView({ name: 'area', areaId: a.id }) }, a.name)] : '',
-    p ? [' › ', el('a', { onclick: () => setView({ name: 'project', projectId: p.id }) }, p.name)] : '',
-    ' › ', t.title));
+  ];
+  if (a) crumbs.push(el('span', { class: 'sep' }, '›'), el('a', { onclick: () => setView({ name: 'area', areaId: a.id }) }, a.name));
+  if (p) crumbs.push(el('span', { class: 'sep' }, '›'), el('a', { onclick: () => setView({ name: 'project', projectId: p.id }) }, p.name));
+  crumbs.push(el('span', { class: 'sep' }, '›'), document.createTextNode(t.title));
+  root.appendChild(el('div', { class: 'crumbs' }, ...crumbs));
+
+  const titleEls = [
+    document.createTextNode(t.title),
+    t.priority === 'high' ? el('span', { class: 'pill prio-high' }, 'High priority')
+      : t.priority === 'low' ? el('span', { class: 'pill prio-low' }, 'Low priority')
+      : null,
+    t.status === 'done' ? el('span', { class: 'pill ok' }, 'done')
+      : (dueCls === 'overdue' ? el('span', { class: 'pill danger' }, dueRelative(t.dueDate))
+        : dueCls === 'due-soon' ? el('span', { class: 'pill warn' }, dueRelative(t.dueDate))
+        : t.dueDate ? el('span', { class: 'pill' }, dueRelative(t.dueDate)) : el('span', { class: 'pill warn' }, 'open')),
+  ].filter(Boolean);
 
   root.appendChild(el('div', { class: 'page-header' },
-    el('h2', {}, t.title,
-      t.status === 'done' ? el('span', { class: 'pill ok' }, 'done')
-                          : el('span', { class: 'pill warn' }, 'open')),
-    el('div', {},
+    el('h2', {}, ...titleEls),
+    el('div', { class: 'actions' },
       el('button', { onclick: () => { toggleTask(t.id); render(); } },
         t.status === 'done' ? 'Reopen' : 'Mark done'),
-      ' ',
-      el('button', { onclick: () => openModal('Add update', formAddUpdate('task', t.id)) }, '+ Update'),
-      ' ',
+      el('button', { class: 'ghost', onclick: () => openModal('Add update', formAddUpdate('task', t.id)) }, '+ Update'),
       el('button', { class: 'ghost danger', onclick: () => confirmDelete('task', t.id, t.title) }, 'Delete'))
   ));
 
@@ -556,6 +737,7 @@ function renderTask(root, taskId) {
 
   root.appendChild(el('div', { class: 'card', style: 'margin-bottom:14px' },
     el('div', { class: 'meta' }, 'Created ' + fmt(t.createdAt)),
+    t.dueDate ? el('div', { class: 'meta' }, 'Due ' + fmtDate(t.dueDate)) : null,
     t.completedAt ? el('div', { class: 'meta' }, 'Completed ' + fmt(t.completedAt)) : null
   ));
 
@@ -567,7 +749,7 @@ function renderTask(root, taskId) {
 
 function renderUpdateList(type, id) {
   const ups = updatesForEntity(type, id);
-  if (ups.length === 0) return el('div', { class: 'empty' }, 'No updates yet.');
+  if (ups.length === 0) return emptyBox('No updates yet.');
   return el('div', {}, ...ups.map(u => updateRow(u, false)));
 }
 
@@ -594,12 +776,12 @@ function updateRow(u, showContext) {
 function renderTodos(root) {
   root.appendChild(el('div', { class: 'page-header' },
     el('h2', {}, 'To-Dos'),
-    el('div', {},
+    el('div', { class: 'actions' },
       el('button', { onclick: () => openModal('New to-do', formAddTodo()) }, '+ To-Do'))
   ));
   const todos = [...state.data.todos].sort((a, b) => Number(a.done) - Number(b.done) || b.createdAt.localeCompare(a.createdAt));
   if (todos.length === 0) {
-    root.appendChild(el('div', { class: 'empty' }, 'No to-dos yet.'));
+    root.appendChild(emptyBox('No to-dos yet.'));
     return;
   }
   const list = el('div', {});
@@ -623,7 +805,7 @@ function renderUpdates(root) {
   root.appendChild(el('div', { class: 'page-header' }, el('h2', {}, 'Update Log (all)')));
   const ups = [...state.data.updates].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   if (ups.length === 0) {
-    root.appendChild(el('div', { class: 'empty' }, 'No updates yet.'));
+    root.appendChild(emptyBox('No updates yet.'));
     return;
   }
   root.appendChild(el('div', {}, ...ups.map(u => updateRow(u, true))));
@@ -637,8 +819,8 @@ function confirmDelete(type, id, name) {
       el('button', { class: 'ghost', onclick: closeModal }, 'Cancel'),
       el('button', { class: 'ghost danger', onclick: () => {
         deleteEntity(type, id);
+        toast(name + ' deleted', 'danger');
         closeModal();
-        // Navigate up if we were viewing the deleted entity
         const v = state.view;
         if ((type === 'area' && v.areaId === id) || (type === 'project' && v.projectId === id) || (type === 'task' && v.taskId === id)) {
           setView({ name: 'areas' });
@@ -649,10 +831,106 @@ function confirmDelete(type, id, name) {
   openModal('Confirm delete', body);
 }
 
-// ---------- Exports ----------
+// ---------- Backup / Restore (JSON) ----------
+function exportJSON() {
+  const payload = {
+    schema: 'life-tracker',
+    version: 1,
+    exportedAt: now(),
+    data: state.data,
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filenameForView('json', true);
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+  toast('JSON backup downloaded', 'ok');
+}
+
+function startImport() {
+  document.getElementById('import-file').click();
+}
+
+function handleImportFile(e) {
+  const file = e.target.files[0];
+  e.target.value = '';
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const parsed = JSON.parse(reader.result);
+      const incoming = parsed && parsed.data ? parsed.data : parsed;
+      // Validate structure
+      const keys = ['areas','projects','tasks','updates','todos'];
+      for (const k of keys) {
+        if (!Array.isArray(incoming[k])) throw new Error('Missing or invalid "' + k + '" array');
+      }
+      askImportMode(incoming);
+    } catch (err) {
+      toast('Import failed: ' + err.message, 'danger');
+    }
+  };
+  reader.onerror = () => toast('Could not read file', 'danger');
+  reader.readAsText(file);
+}
+
+function askImportMode(incoming) {
+  const counts =
+    incoming.areas.length + ' areas, ' +
+    incoming.projects.length + ' projects, ' +
+    incoming.tasks.length + ' tasks, ' +
+    incoming.updates.length + ' updates, ' +
+    incoming.todos.length + ' to-dos';
+  const body = el('div', {},
+    el('p', {}, 'Found ' + counts + ' in the backup.'),
+    el('p', { class: 'muted small' },
+      el('strong', {}, 'Replace'),
+      ': delete all current data and load the backup.', el('br'),
+      el('strong', {}, 'Merge'),
+      ': add backup items alongside current data (duplicate IDs are skipped).'),
+    el('div', { class: 'modal-actions' },
+      el('button', { class: 'ghost', onclick: closeModal }, 'Cancel'),
+      el('button', { class: 'ghost', onclick: () => { mergeImport(incoming); closeModal(); render(); } }, 'Merge'),
+      el('button', { class: 'ghost danger', onclick: () => {
+        state.data = normalizeImported(incoming);
+        save(); closeModal(); render();
+        toast('Data replaced from backup', 'ok');
+      } }, 'Replace'))
+  );
+  openModal('Restore from backup', body);
+}
+
+function normalizeImported(incoming) {
+  const data = {
+    areas: incoming.areas.map(x => ({ ...x })),
+    projects: incoming.projects.map(x => ({ ...x })),
+    tasks: incoming.tasks.map(x => ({ priority: 'med', dueDate: null, ...x })),
+    updates: incoming.updates.map(x => ({ ...x })),
+    todos: incoming.todos.map(x => ({ ...x })),
+  };
+  return data;
+}
+
+function mergeImport(incoming) {
+  const norm = normalizeImported(incoming);
+  for (const k of ['areas','projects','tasks','updates','todos']) {
+    const existing = new Set(state.data[k].map(x => x.id));
+    let added = 0;
+    for (const item of norm[k]) {
+      if (item.id && !existing.has(item.id)) { state.data[k].push(item); added++; }
+    }
+  }
+  save();
+  toast('Backup merged', 'ok');
+}
+
+// ---------- Exports (PDF / PPT / XLSX) ----------
 async function exportPDF() {
   const main = document.getElementById('main');
-  const canvas = await html2canvas(main, { backgroundColor: getComputedStyle(document.body).backgroundColor, scale: 2 });
+  const bg = getComputedStyle(document.body).backgroundColor;
+  const canvas = await html2canvas(main, { backgroundColor: bg, scale: 2 });
   const imgData = canvas.toDataURL('image/png');
   const { jsPDF } = window.jspdf;
   const pdf = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
@@ -663,6 +941,7 @@ async function exportPDF() {
   if (h > pageH - 40) { h = pageH - 40; w = h * ratio; }
   pdf.addImage(imgData, 'PNG', (pageW - w) / 2, 20, w, h);
   pdf.save(filenameForView('pdf'));
+  toast('PDF saved', 'ok');
 }
 
 async function exportPPT() {
@@ -670,7 +949,6 @@ async function exportPPT() {
   pptx.layout = 'LAYOUT_WIDE';
 
   const v = state.view;
-  // Cover slide
   const title = pptTitleForView();
   const cover = pptx.addSlide();
   cover.addText(title, { x: 0.5, y: 0.7, w: 12, h: 1, fontSize: 36, bold: true });
@@ -685,6 +963,7 @@ async function exportPPT() {
       { text: 'Projects: ' + state.data.projects.length + '\n' },
       { text: 'Tasks: ' + s.total + ' (' + s.done + ' done, ' + s.open + ' open)\n' },
       { text: 'Completion: ' + s.pct + '%\n' },
+      { text: 'Overdue: ' + s.overdue + ' · Due soon: ' + s.dueSoon + '\n' },
       { text: 'Open To-Dos: ' + state.data.todos.filter(t => !t.done).length },
     ], { x: 0.5, y: 1.0, w: 12, h: 4, fontSize: 18 });
 
@@ -694,13 +973,13 @@ async function exportPPT() {
       const ast = statsForTasks(tasks);
       const sl = pptx.addSlide();
       sl.addText(a.name, { x: 0.5, y: 0.4, w: 12, h: 0.6, fontSize: 28, bold: true });
-      sl.addText(projects.length + ' projects · ' + ast.total + ' tasks · ' + ast.pct + '% done',
+      sl.addText(projects.length + ' projects · ' + ast.total + ' tasks · ' + ast.pct + '% done · ' + ast.overdue + ' overdue',
         { x: 0.5, y: 1.0, w: 12, h: 0.4, fontSize: 14, color: '888888' });
-      const rows = [['Project', 'Tasks', 'Done', '% complete']];
+      const rows = [['Project', 'Tasks', 'Done', '% complete', 'Overdue']];
       for (const p of projects) {
         const ts = tasksOfProject(p.id);
         const ps = statsForTasks(ts);
-        rows.push([p.name, String(ps.total), String(ps.done), ps.pct + '%']);
+        rows.push([p.name, String(ps.total), String(ps.done), ps.pct + '%', String(ps.overdue)]);
       }
       sl.addTable(rows, { x: 0.5, y: 1.5, w: 12, fontSize: 12, border: { type: 'solid', color: 'DDDDDD', pt: 0.5 } });
     }
@@ -712,17 +991,15 @@ async function exportPPT() {
       const s = statsForTasks(tasks);
       const slide = pptx.addSlide();
       slide.addText(a.name, { x: 0.5, y: 0.4, w: 12, h: 0.6, fontSize: 28, bold: true });
-      slide.addText('Projects: ' + projects.length + ' · Tasks: ' + s.total + ' · ' + s.pct + '% done',
+      slide.addText('Projects: ' + projects.length + ' · Tasks: ' + s.total + ' · ' + s.pct + '% done · Overdue: ' + s.overdue,
         { x: 0.5, y: 1.0, w: 12, h: 0.4, fontSize: 14, color: '888888' });
-      const rows = [['Project', 'Tasks', 'Done', '% complete']];
+      const rows = [['Project', 'Tasks', 'Done', '% complete', 'Overdue']];
       for (const p of projects) {
         const ts = tasksOfProject(p.id);
         const ps = statsForTasks(ts);
-        rows.push([p.name, String(ps.total), String(ps.done), ps.pct + '%']);
+        rows.push([p.name, String(ps.total), String(ps.done), ps.pct + '%', String(ps.overdue)]);
       }
       slide.addTable(rows, { x: 0.5, y: 1.5, w: 12, fontSize: 12, border: { type: 'solid', color: 'DDDDDD', pt: 0.5 } });
-
-      // Updates slide
       const ups = updatesForEntity('area', a.id).slice(0, 20);
       if (ups.length) {
         const us = pptx.addSlide();
@@ -734,15 +1011,19 @@ async function exportPPT() {
   } else if (v.name === 'project') {
     const p = getProject(v.projectId);
     if (p) {
-      const ts = tasksOfProject(p.id);
+      const ts = sortTasks(tasksOfProject(p.id));
       const ps = statsForTasks(ts);
       const slide = pptx.addSlide();
       slide.addText(p.name, { x: 0.5, y: 0.4, w: 12, h: 0.6, fontSize: 28, bold: true });
-      slide.addText('Tasks: ' + ps.total + ' · ' + ps.pct + '% done', { x: 0.5, y: 1.0, w: 12, h: 0.4, fontSize: 14, color: '888888' });
-      const rows = [['Task', 'Status', 'Created', 'Completed']];
-      for (const t of ts) rows.push([t.title, t.status, fmtDate(t.createdAt), t.completedAt ? fmtDate(t.completedAt) : '—']);
+      slide.addText('Tasks: ' + ps.total + ' · ' + ps.pct + '% done · Overdue: ' + ps.overdue,
+        { x: 0.5, y: 1.0, w: 12, h: 0.4, fontSize: 14, color: '888888' });
+      const rows = [['Task', 'Priority', 'Due', 'Status']];
+      for (const t of ts) rows.push([
+        t.title, t.priority || 'med',
+        t.dueDate ? fmtDate(t.dueDate) : '—',
+        t.status,
+      ]);
       slide.addTable(rows, { x: 0.5, y: 1.5, w: 12, fontSize: 12, border: { type: 'solid', color: 'DDDDDD', pt: 0.5 } });
-
       const ups = updatesForEntity('project', p.id).slice(0, 20);
       if (ups.length) {
         const us = pptx.addSlide();
@@ -756,11 +1037,12 @@ async function exportPPT() {
     if (t) {
       const slide = pptx.addSlide();
       slide.addText(t.title, { x: 0.5, y: 0.4, w: 12, h: 0.6, fontSize: 28, bold: true });
-      slide.addText('Status: ' + t.status + ' · Created ' + fmtDate(t.createdAt)
+      slide.addText('Status: ' + t.status + ' · Priority: ' + (t.priority || 'med')
+        + (t.dueDate ? ' · Due ' + fmtDate(t.dueDate) : '')
+        + ' · Created ' + fmtDate(t.createdAt)
         + (t.completedAt ? ' · Done ' + fmtDate(t.completedAt) : ''),
         { x: 0.5, y: 1.0, w: 12, h: 0.4, fontSize: 14, color: '888888' });
       if (t.description) slide.addText(t.description, { x: 0.5, y: 1.6, w: 12, h: 1.5, fontSize: 14 });
-
       const ups = updatesForEntity('task', t.id);
       if (ups.length) {
         const us = pptx.addSlide();
@@ -784,6 +1066,7 @@ async function exportPPT() {
   }
 
   await pptx.writeFile({ fileName: filenameForView('pptx') });
+  toast('PPT saved', 'ok');
 }
 
 function exportXLSX() {
@@ -793,18 +1076,26 @@ function exportXLSX() {
     const projects = projectsOfArea(a.id);
     const tasks = projects.flatMap(p => tasksOfProject(p.id));
     const s = statsForTasks(tasks);
-    return { id: a.id, name: a.name, description: a.description, projects: projects.length, tasks: s.total, done: s.done, completion_pct: s.pct, created: a.createdAt };
+    return { id: a.id, name: a.name, description: a.description, projects: projects.length, tasks: s.total, done: s.done, overdue: s.overdue, completion_pct: s.pct, created: a.createdAt };
   });
   const projects = state.data.projects.map(p => {
     const a = getArea(p.areaId);
     const ts = tasksOfProject(p.id);
     const s = statsForTasks(ts);
-    return { id: p.id, area: a ? a.name : '', name: p.name, description: p.description, tasks: s.total, done: s.done, completion_pct: s.pct, created: p.createdAt };
+    return { id: p.id, area: a ? a.name : '', name: p.name, description: p.description, tasks: s.total, done: s.done, overdue: s.overdue, completion_pct: s.pct, created: p.createdAt };
   });
   const tasks = state.data.tasks.map(t => {
     const p = getProject(t.projectId);
     const a = p ? getArea(p.areaId) : null;
-    return { id: t.id, area: a ? a.name : '', project: p ? p.name : '', title: t.title, description: t.description, status: t.status, created: t.createdAt, completed: t.completedAt || '' };
+    return {
+      id: t.id, area: a ? a.name : '', project: p ? p.name : '',
+      title: t.title, description: t.description,
+      priority: t.priority || 'med',
+      due: t.dueDate || '',
+      status: t.status,
+      created: t.createdAt,
+      completed: t.completedAt || '',
+    };
   });
   const updates = state.data.updates.map(u => {
     let context = '';
@@ -822,6 +1113,7 @@ function exportXLSX() {
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(todos), 'ToDos');
 
   XLSX.writeFile(wb, filenameForView('xlsx', true));
+  toast('XLSX saved', 'ok');
 }
 
 function pptTitleForView() {
@@ -862,12 +1154,20 @@ function bind() {
   document.getElementById('modal').addEventListener('click', (e) => {
     if (e.target.id === 'modal') closeModal();
   });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !document.getElementById('modal').classList.contains('hidden')) closeModal();
+  });
   document.getElementById('export-pdf').addEventListener('click', exportPDF);
   document.getElementById('export-ppt').addEventListener('click', exportPPT);
   document.getElementById('export-xlsx').addEventListener('click', exportXLSX);
+  document.getElementById('export-json').addEventListener('click', exportJSON);
+  document.getElementById('import-json').addEventListener('click', startImport);
+  document.getElementById('import-file').addEventListener('change', handleImportFile);
+  document.getElementById('theme-toggle').addEventListener('click', toggleTheme);
   document.getElementById('lock-now').addEventListener('click', lockNow);
 }
 
+setTheme(getTheme());
 load();
 bind();
 initLock();
