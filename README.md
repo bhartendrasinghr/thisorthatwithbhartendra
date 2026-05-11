@@ -1,37 +1,43 @@
-# Life Tracker
+# This or That with Bhartendra
 
-A private, single-page dashboard for tracking all areas of life.
+Landing page for the podcast **This or That with Bhartendra** — *Beyond the noise*.
 
-Hierarchy: **Areas → Projects → Tasks**, with an update log on every item, a separate quick-capture **To-Dos** section, and a global update log.
+Built with Next.js 14 (App Router) and Tailwind CSS. Episodes are pulled live from the [YouTube channel](https://www.youtube.com/@ThisOrThatPodcastIndia) via the public RSS feed, so the page stays up to date without manual edits.
 
-## How to run
+## Develop
 
-This is a static site — no build, no server.
+```bash
+npm install
+npm run dev
+```
 
-- **Locally**: open `index.html` in a browser, or run `python3 -m http.server` in this directory and visit `http://localhost:8000`.
-- **Hosted**: works on GitHub Pages or any static host. Push and enable Pages on the branch.
+Open http://localhost:3000.
 
-## First run
+## Build
 
-You'll be asked to set a passcode. The SHA-256 hash is stored in `localStorage` on this device — keep the passcode somewhere safe; it can't be recovered.
+```bash
+npm run build
+npm start
+```
 
-## Features
+## Configuration
 
-- Add Areas, Projects (under an area), and Tasks (under a project)
-- Tasks support **due dates** and **priority** (Low / Medium / High); list is auto-sorted by urgency
-- Mark tasks done / reopen
-- Add free-form **updates** to any area, project, or task — each item shows its own update log
-- Dashboard with progress across all areas, **Overdue** and **Due-in-7-days** counters, and a "Due now / soon" list
-- Quick-capture **To-Dos** section, separate from project tasks
-- Global **Update Log** view
-- **Light / dark theme** toggle
-- **Export current view as PDF** (visual snapshot)
-- **Export current view as PPT** (.pptx with tables and summaries per slide)
-- **Export all data as Excel** (.xlsx with Areas / Projects / Tasks / Updates / ToDos sheets)
-- **Backup / Restore as JSON** — full export, plus import with **Replace** or **Merge** options
-- Passcode lock screen + Lock button in sidebar
-- Responsive layout (works on phone)
+The page resolves the YouTube channel ID automatically from the handle `@ThisOrThatPodcastIndia`. If you want to skip that lookup (e.g. for faster cold starts or stricter networks), set:
 
-## Privacy
+```
+YOUTUBE_CHANNEL_ID=UC...
+```
 
-All data lives in your browser's `localStorage`. Nothing is sent anywhere. Clearing browser storage will delete the data, so use the **JSON backup** (full fidelity) or **XLSX export** occasionally as a backup.
+in a `.env.local` file. The ID can be found by visiting the channel page → View Source → search for `"channelId"`.
+
+## Deploy
+
+Deploys cleanly to Vercel, Netlify, or any Node host that supports Next.js 14. The page uses ISR (`revalidate = 1800`), so the YouTube feed is refreshed at most every 30 minutes.
+
+## Sections
+
+- **Hero** — tagline, latest episode card, channel CTA.
+- **This or That** — interactive warm-up that mirrors the show's format.
+- **Episodes** — auto-populated grid of the most recent uploads.
+- **About** — the host's bio and background.
+- **Subscribe** — platform links plus email signup (front-end only — wire it to your provider of choice in `components/Subscribe.tsx`).
