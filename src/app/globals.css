@@ -1,0 +1,69 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+:root {
+  --indigo: #1a1f6b;
+  --indigo-dark: #0f1238;
+  --gold: #d4a93a;
+  --ink: #0f1238;
+  --ink-2: #4a4d70;
+  --ink-3: #8a8da8;
+  --paper: #ffffff;
+  --paper-2: #f7f7fb;
+  --paper-3: #eef0f7;
+  --rule: #e5e7f0;
+  --rule-2: #eef0f7;
+  --bg: #ece6d4;
+}
+
+html, body { background: var(--bg); color: var(--ink); }
+body { font-family: 'Inter', system-ui, sans-serif; }
+.font-serif { font-family: 'Cormorant Garamond', serif; }
+.font-mono, .mono, .num { font-family: 'JetBrains Mono', monospace; }
+
+.card {
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: 12px;
+}
+
+.btn-primary {
+  background: var(--indigo); color: #fff;
+  padding: 8px 14px; border-radius: 8px; font-weight: 600; font-size: 13px;
+  display: inline-flex; align-items: center; gap: 6px;
+  border: 1px solid var(--indigo);
+}
+.btn-primary:hover { background: var(--indigo-dark); }
+
+.btn-secondary {
+  background: var(--paper); color: var(--ink);
+  padding: 8px 14px; border-radius: 8px; font-weight: 500; font-size: 13px;
+  display: inline-flex; align-items: center; gap: 6px;
+  border: 1px solid var(--rule);
+}
+.btn-secondary:hover { background: var(--paper-2); }
+
+.chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 8px; border-radius: 6px; font-size: 11px; font-weight: 600;
+  border: 1px solid var(--rule); background: var(--paper-3); color: var(--ink-2);
+}
+
+input, select, textarea {
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 13px;
+  font-family: inherit;
+  color: var(--ink);
+}
+input:focus, select:focus, textarea:focus { outline: 2px solid var(--indigo); outline-offset: -1px; }
+
+table { border-collapse: collapse; }
+th { background: var(--paper-2); font-weight: 600; font-size: 11px; text-transform: uppercase; color: var(--ink-3); letter-spacing: 0.04em; }
+td, th { padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--rule); font-size: 13px; }
+tr:hover td { background: var(--paper-2); }
